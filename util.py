@@ -1,108 +1,55 @@
 import string
 import easyocr
-
-# Initialize the OCR reader
-reader = easyocr.Reader(['en'], gpu=False)
-
-# Mapping dictionaries for character conversion
-dict_char_to_int = {'O': '0',
-                    'I': '1',
-                    'J': '3',
-                    'A': '4',
-                    'G': '6',
-                    'S': '5'}
-
-dict_int_to_char = {'0': 'O',
-                    '1': 'I',
-                    '3': 'J',
-                    '4': 'A',
-                    '6': 'G',
-                    '5': 'S'}
+import numpy as np
+import cv2, dlib
+import datetime
+import uuid
+import face_recognition
+import matplotlib.pyplot as plt
+import pandas as pd
 
 
-def write_csv(results, output_path):
-    """
-    Write the results to a CSV file.
-
-    Args:
-        results (dict): Dictionary containing the results.
-        output_path (str): Path to the output CSV file.
-    """
-    with open(output_path, 'w') as f:
-        f.write('{},{},{},{},{},{},{}\n'.format('frame_nmr', 'car_id', 'car_bbox',
-                                                'license_plate_bbox', 'license_plate_bbox_score', 'license_number',
-                                                'license_number_score'))
-
-        for frame_nmr in results.keys():
-            for car_id in results[frame_nmr].keys():
-                print(results[frame_nmr][car_id])
-                if 'car' in results[frame_nmr][car_id].keys() and \
-                   'license_plate' in results[frame_nmr][car_id].keys() and \
-                   'text' in results[frame_nmr][car_id]['license_plate'].keys():
-                    f.write('{},{},{},{},{},{},{}\n'.format(frame_nmr,
-                                                            car_id,
-                                                            '[{} {} {} {}]'.format(
-                                                                results[frame_nmr][car_id]['car']['bbox'][0],
-                                                                results[frame_nmr][car_id]['car']['bbox'][1],
-                                                                results[frame_nmr][car_id]['car']['bbox'][2],
-                                                                results[frame_nmr][car_id]['car']['bbox'][3]),
-                                                            '[{} {} {} {}]'.format(
-                                                                results[frame_nmr][car_id]['license_plate']['bbox'][0],
-                                                                results[frame_nmr][car_id]['license_plate']['bbox'][1],
-                                                                results[frame_nmr][car_id]['license_plate']['bbox'][2],
-                                                                results[frame_nmr][car_id]['license_plate']['bbox'][3]),
-                                                            results[frame_nmr][car_id]['license_plate']['bbox_score'],
-                                                            results[frame_nmr][car_id]['license_plate']['text'],
-                                                            results[frame_nmr][car_id]['license_plate']['text_score'])
-                            )
-        f.close()
 
 
-def license_complies_format(text):
-    """
-    Check if the license plate text complies with the required format.
+from PIL import Image
+from pathlib import Path  
+from imutils import face_utils
+from keras.models import load_model
 
-    Args:
-        text (str): License plate text.
+from ultralytics import YOLO
+from ultralytics.utils.plotting import save_one_box
 
-    Returns:
-        bool: True if the license plate complies with the format, False otherwise.
-    """
-    if len(text) != 7:
-        return False
-
-    if (text[0] in string.ascii_uppercase or text[0] in dict_int_to_char.keys()) and \
-       (text[1] in string.ascii_uppercase or text[1] in dict_int_to_char.keys()) and \
-       (text[2] in ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] or text[2] in dict_char_to_int.keys()) and \
-       (text[3] in ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] or text[3] in dict_char_to_int.keys()) and \
-       (text[4] in string.ascii_uppercase or text[4] in dict_int_to_char.keys()) and \
-       (text[5] in string.ascii_uppercase or text[5] in dict_int_to_char.keys()) and \
-       (text[6] in string.ascii_uppercase or text[6] in dict_int_to_char.keys()):
-        return True
-    else:
-        return False
+# for 
+detector = dlib.get_frontal_face_detector()
+predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
+model = load_model('models/2018_12_17_22_58_35.h5')
+model.summary()
 
 
-def format_license(text):
-    """
-    Format the license plate text by converting characters using the mapping dictionaries.
 
-    Args:
-        text (str): License plate text.
 
-    Returns:
-        str: Formatted license plate text.
-    """
-    license_plate_ = ''
-    mapping = {0: dict_int_to_char, 1: dict_int_to_char, 4: dict_int_to_char, 5: dict_int_to_char, 6: dict_int_to_char,
-               2: dict_char_to_int, 3: dict_char_to_int}
-    for j in [0, 1, 2, 3, 4, 5, 6]:
-        if text[j] in mapping[j].keys():
-            license_plate_ += mapping[j][text[j]]
-        else:
-            license_plate_ += text[j]
 
-    return license_plate_
+# load models
+coco_model = YOLO('yolov8n.pt')
+coway_model = YOLO('./models/coway_nric_bast_v0.1.pt')
+
+
+
+# fro ocr 
+reader = easyocr.Reader(['en'], gpu=True)
+
+
+def df_to_json(results):
+    print(results.to_json(orient="records"))
+
+   
+def df_to_cvs(results):
+    
+    x = datetime.datetime.today().strftime("%Y%m%d%H%M%S")
+    filepath = Path(f'folder/subfolder/{x}_out.csv') 
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    results.to_csv(filepath)  
+  
 
 
 def read_license_plate(license_plate_crop):
@@ -116,42 +63,168 @@ def read_license_plate(license_plate_crop):
         tuple: Tuple containing the formatted license plate text and its confidence score.
     """
 
-    detections = reader.readtext(license_plate_crop)
+    try:
+        detections = reader.readtext(license_plate_crop)
+        
+        lineText =''
+        for detection in detections:
+                bbox,text,score = detection
+                lineText += text.upper()
 
-    for detection in detections:
-        bbox, text, score = detection
+        return lineText , score    
 
-        text = text.upper().replace(' ', '')
+    except :
+        return  None , None
 
-        if license_complies_format(text):
-            return format_license(text), score
+        #     return format_license(text), score
 
-    return None, None
+        # if license_complies_format(text):
+
+    #return None, none
 
 
-def get_car(license_plate, vehicle_track_ids):
-    """
-    Retrieve the vehicle coordinates and ID based on the license plate coordinates.
+IMG_SIZE = (34, 26)
 
-    Args:
-        license_plate (tuple): Tuple containing the coordinates of the license plate (x1, y1, x2, y2, score, class_id).
-        vehicle_track_ids (list): List of vehicle track IDs and their corresponding coordinates.
+def crop_eye(img, eye_points):
 
-    Returns:
-        tuple: Tuple containing the vehicle coordinates (x1, y1, x2, y2) and ID.
-    """
-    x1, y1, x2, y2, score, class_id = license_plate
+  x1, y1 = np.amin(eye_points, axis=0)
+  x2, y2 = np.amax(eye_points, axis=0)
+  cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
 
-    foundIt = False
-    for j in range(len(vehicle_track_ids)):
-        xcar1, ycar1, xcar2, ycar2, car_id = vehicle_track_ids[j]
+  w = (x2 - x1) * 1.2
+  h = w * IMG_SIZE[1] / IMG_SIZE[0]
 
-        if x1 > xcar1 and y1 > ycar1 and x2 < xcar2 and y2 < ycar2:
-            car_indx = j
-            foundIt = True
+  margin_x, margin_y = w / 2, h / 2
+
+  min_x, min_y = int(cx - margin_x), int(cy - margin_y)
+  max_x, max_y = int(cx + margin_x), int(cy + margin_y)
+
+  eye_rect = np.rint([min_x, min_y, max_x, max_y]).astype(int)
+
+  eye_img = img[eye_rect[1]:eye_rect[3], eye_rect[0]:eye_rect[2]]
+
+  return eye_img, eye_rect
+
+
+def checkBlink(img_ori):
+    
+    blink_Falg =False
+
+    img_ori = cv2.resize(img_ori, dsize=(0, 0), fx=0.5, fy=0.5)
+
+    img = img_ori.copy()
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    faces = detector(gray)
+
+    for face in faces:
+        shapes = predictor(gray, face)
+        shapes = face_utils.shape_to_np(shapes)
+
+        eye_img_l, eye_rect_l = crop_eye(gray, eye_points=shapes[36:42])
+        eye_img_r, eye_rect_r = crop_eye(gray, eye_points=shapes[42:48])
+
+        eye_img_l = cv2.resize(eye_img_l, dsize=IMG_SIZE)
+        eye_img_r = cv2.resize(eye_img_r, dsize=IMG_SIZE)
+        eye_img_r = cv2.flip(eye_img_r, flipCode=1)
+
+    
+        eye_input_l = eye_img_l.copy().reshape((1, IMG_SIZE[1], IMG_SIZE[0], 1)).astype(np.float32) / 255.
+        eye_input_r = eye_img_r.copy().reshape((1, IMG_SIZE[1], IMG_SIZE[0], 1)).astype(np.float32) / 255.
+
+        pred_l = model.predict(eye_input_l)
+        pred_r = model.predict(eye_input_r)
+
+
+
+        # visualize
+        state_l = 'O %.1f' if pred_l > 0.1 else '- %.1f'
+        state_r = 'O %.1f' if pred_r > 0.1 else '- %.1f'
+
+        state_l = state_l % pred_l
+        state_r = state_r % pred_r
+
+        if pred_r[0][0] <= 0.15 and   pred_l[0][0] <= 0.15:
+            blink_Falg =True
             break
+        
 
-    if foundIt:
-        return vehicle_track_ids[car_indx]
+    return blink_Falg
 
-    return -1, -1, -1, -1, -1
+
+
+df = pd.DataFrame( columns =['tran_id','idx' ,'type','value', 'bbox_conf','value_conf','cropFaceImg'])
+
+def  OCR(inputImg) :
+
+    rIdx =0
+    res = coway_model(f'{inputImg}')
+
+    for r in res:
+        trin_id  =uuid.uuid4()
+        results = {}
+        
+        arr = r.plot()
+        image = Image.fromarray(arr[..., ::-1])
+        r.save_crop('datasets/yolo/images/crop' ,file_name=f'{trin_id}.jpg')
+        cropImagName ="datasets/yolo/images/crop/IMAGE/"f'{trin_id}'".jpg"
+
+	
+        for  indx, d in  enumerate(r.boxes):
+            if r.names[int(d.cls)] != 'IMAGE':
+                image = save_one_box(d.xyxy, r.orig_img.copy(), BGR=True, save=False)
+                license_plate_text, license_plate_text_score = read_license_plate(image)
+            
+                df.loc[rIdx]={'tran_id': str(trin_id),
+                'idx':indx ,
+                'type':r.names[int(d.cls)] ,
+                'value':license_plate_text ,
+                'bbox_conf' :float(d.conf), 
+                'value_conf' :license_plate_text_score,
+                'cropFaceImg':f'{str(trin_id)}.jpg'}
+
+                rIdx = rIdx+1
+                
+            # else:
+            #     image = save_one_box(d.xyxy, r.orig_img.copy(), BGR=True, save=False)
+            #     image = Image.fromarray(image)
+
+            #     face = face_recognition.face_encodings(np.array(image))[0]
+            #     realface = face_recognition.face_encodings(face_recognition.load_image_file(r".\datasets\real\capture\images\real\realFace.jpg"))[0]
+            #     results = face_recognition.compare_faces([face], realface, tolerance=0.45)
+            #     print(results)
+
+            #     fig,axs= plt.subplots(1,2 , figsize=(15,5))
+            #     axs[0].imshow(plt.imread(cropImagName))
+            #     axs[1].imshow(plt.imread(r'datasets\real\capture\images\real\realFace.jpg'))
+
+            #     fig.suptitle(f" Verifie :: { results }")
+            #     plt.show()
+
+
+    return df
+
+
+def call_face_detection(scanimage , realFaceImg):
+
+        print ('scanimage===>' , scanimage)
+        print ('realFaceImg===>' , realFaceImg)
+        
+        #face = face_recognition.face_encodings(np.array(image))[0]
+        m1 = face_recognition.load_image_file(scanimage)
+        face = face_recognition.face_encodings(m1)[0]
+        
+        realface = face_recognition.face_encodings(face_recognition.load_image_file(realFaceImg))[0]
+        results = face_recognition.compare_faces([face], realface, tolerance=0.45)
+        print(results)
+
+        # fig,axs= plt.subplots(1,2 , figsize=(15,5))
+        # axs[0].imshow(plt.imread(scanimage))
+        # axs[1].imshow(plt.imread(realFaceImg))
+    
+        # fig.suptitle(f" Verifie :: { results }")
+        # plt.show()
+
+        return results
+
+        

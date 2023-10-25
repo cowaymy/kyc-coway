@@ -1,69 +1,129 @@
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+
 from ultralytics import YOLO
+from ultralytics.utils.plotting import save_one_box
+
 import cv2
+import numpy as np
+import pandas as pd
 
 import util
-from sort.sort import *
-from util import get_car, read_license_plate, write_csv
+import uuid
+#from sort.sort import *
+from util import read_license_plate, df_to_json ,df_to_cvs
+from PIL import Image
+import json
+from collections import OrderedDict
 
+import face_recognition
+
+
+import matplotlib.pyplot as plt
+
+from deepface import DeepFace
+#Read more at: https://viso.ai/computer-vision/deepface/
 
 results = {}
+json_data = OrderedDict()
 
-mot_tracker = Sort()
+# mot_tracker = Sort()
 
 # load models
 coco_model = YOLO('yolov8n.pt')
-license_plate_detector = YOLO('./models/license_plate_detector.pt')
+coway_model = YOLO('./models/coway_nric_bast_v0.1.pt')
 
-# load video
-cap = cv2.VideoCapture('./sample.mp4')
+res = coway_model('./data/images/10.jpeg')
 
-vehicles = [2, 3, 5, 7]
+df = pd.DataFrame( columns =['tran_id','idx' ,'type','value', 'bbox_conf','value_conf','cropFaceImg'])
 
-# read frames
-frame_nmr = -1
-ret = True
-while ret:
-    frame_nmr += 1
-    ret, frame = cap.read()
-    if ret:
-        results[frame_nmr] = {}
-        # detect vehicles
-        detections = coco_model(frame)[0]
-        detections_ = []
-        for detection in detections.boxes.data.tolist():
-            x1, y1, x2, y2, score, class_id = detection
-            if int(class_id) in vehicles:
-                detections_.append([x1, y1, x2, y2, score])
+def noise_removal(image):
+    import numpy as np 
+    kernel =np.ones((1,1) , np.uint8)
+    image =cv2.dilate(image, kernel, iterations=1)
+    kernel = np.ones((0,0) , np.uint8)  #글씨굵어짐 
+    image =cv2.erode(image, kernel, iterations=1)
+    image =cv2.morphologyEx(image,cv2.MORPH_CLOSE, kernel)
+    image = cv2.medianBlur(image,3)
+    return (image)
 
-        # track vehicles
-        track_ids = mot_tracker.update(np.asarray(detections_))
 
-        # detect license plates
-        license_plates = license_plate_detector(frame)[0]
-        for license_plate in license_plates.boxes.data.tolist():
-            x1, y1, x2, y2, score, class_id = license_plate
+rIdx =0
+for r in res:
+	trin_id  =uuid.uuid4()
+	results = {}
+	
+	arr = r.plot()
+	image = Image.fromarray(arr[..., ::-1])
+	r.save_crop('datasets/yolo/images/crop' ,file_name=f'{trin_id}.jpg')
+	
+	cropImagName ="datasets/yolo/images/crop/IMAGE/"f'{trin_id}'".jpg"
+	
 
-            # assign license plate to car
-            xcar1, ycar1, xcar2, ycar2, car_id = get_car(license_plate, track_ids)
 
-            if car_id != -1:
+	
+	for  indx, d in  enumerate(r.boxes):
+		if r.names[int(d.cls)] != 'IMAGE':
+		
+			image = save_one_box(d.xyxy, r.orig_img.copy(), BGR=True, save=False)
+			# image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+			# image = cv2.resize(image, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+			# image = noise_removal(image)
+			license_plate_text, license_plate_text_score = read_license_plate(image)
+			# image = Image.fromarray(image)
+			# image.show()
+			
+			df.loc[rIdx]={'tran_id': str(trin_id),
+				'idx':indx ,
+				'type':r.names[int(d.cls)] ,
+				'value':license_plate_text ,
+				'bbox_conf' :float(d.conf), 
+				'value_conf' :license_plate_text_score,
+				'cropFaceImg':f'{str(trin_id)}.jpg'}
+			
+			rIdx = rIdx+1
+			# process license plate
+	    
+			# license_plate_crop_gray = cv2.cvtColor(r.orig_img.copy(), cv2.COLOR_BGR2GRAY)
+			# _,license_plate_crop_thresh = cv2.threshold(license_plate_crop_gray, 64, 255, cv2.THRESH_BINARY_INV)
+			# license_plate_text, license_plate_text_score = read_license_plate(license_plate_crop_thresh)
+			# lic
+			# ense_plate_crop_gray.show()
+			#
+			#results__[0][r.names[int(d.cls)] ] ={}
+	
+		else:
+			image = save_one_box(d.xyxy, r.orig_img.copy(), BGR=True, save=False)
+			image = Image.fromarray(image)
 
-                # crop license plate
-                license_plate_crop = frame[int(y1):int(y2), int(x1): int(x2), :]
+			face = face_recognition.face_encodings(np.array(image))[0]
+			realface = face_recognition.face_encodings(face_recognition.load_image_file(r".\datasets\real\capture\images\real\realFace.jpg"))[0]
+			results = face_recognition.compare_faces([face], realface, tolerance=0.45)
+			print(results)
 
-                # process license plate
-                license_plate_crop_gray = cv2.cvtColor(license_plate_crop, cv2.COLOR_BGR2GRAY)
-                _, license_plate_crop_thresh = cv2.threshold(license_plate_crop_gray, 64, 255, cv2.THRESH_BINARY_INV)
+			fig,axs= plt.subplots(1,2 , figsize=(15,5))
+			axs[0].imshow(plt.imread(cropImagName))
+			axs[1].imshow(plt.imread(r'datasets\real\capture\images\real\realFace.jpg'))
+		
+			fig.suptitle(f" Verifie :: { results }")
+			plt.show()
 
-                # read license plate number
-                license_plate_text, license_plate_text_score = read_license_plate(license_plate_crop_thresh)
 
-                if license_plate_text is not None:
-                    results[frame_nmr][car_id] = {'car': {'bbox': [xcar1, ycar1, xcar2, ycar2]},
-                                                  'license_plate': {'bbox': [x1, y1, x2, y2],
-                                                                    'text': license_plate_text,
-                                                                    'bbox_score': score,
-                                                                    'text_score': license_plate_text_score}}
+	
+			# models = ["VGG-Face", "Facenet", "OpenFace", "DeepFace", "DeepID", "Dlib", "ArcFace"]
+			# result = DeepFace.verify(img1_path =cropImagName, img2_path = r"D:\OCR\automatic-number-plate-recognition-python-yolov8\datasets\real\capture\images\real\test.jpg" ,model_name=models[3])
+			
+			# fig,axs= plt.subplots(1,2 , figsize=(15,5))
+			# axs[0].imshow(plt.imread(cropImagName))
+			# axs[1].imshow(plt.imread(r'D:\OCR\automatic-number-plate-recognition-python-yolov8\datasets\real\capture\images\real\test.jpg'))
 
-# write results
-write_csv(results, './test.csv')
+
+			# fig.suptitle(f" Verifie :: { result['verified']} - Distance ::  { result['distance']:0.4}  ")
+			# plt.show()
+
+
+
+
+print(df)
+#df_to_json(df)
+df_to_cvs(df)

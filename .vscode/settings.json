@@ -1,0 +1,14 @@
+{
+    "editor.defaultFormatter": null,
+    "editor.tabCompletion": "on",
+"editor.tabFocusMode": false,
+"editor.useTabStops": true,
+"editor.stickyTabStops": true,
+"[python]": {
+        "editor.defaultFormatter": "ms-python.autopep8"
+},
+"python.formatting.provider": "none",
+"terminal.integrated.tabStopWidth": 4,
+"git.ignoreLimitWarning": true,
+"editor.insertSpaces": false
+}

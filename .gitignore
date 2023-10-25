@@ -1,0 +1,5 @@
+data
+datasets/splitData
+datasets/dataCollect
+runs
+datasets/yolo/images/crop/*
