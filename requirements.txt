@@ -1,2 +1,1 @@
-face-recognition @ git+https://github.com/cowaymy/face_recognition
-face-recognition-models==0.3.0
+face-recognition @ git+https://github.com/cowaymy/face_recognition/tree/master
