@@ -57,7 +57,7 @@ cssselect==1.1.0
 cvzone==1.6.1
 cycler==0.11.0
 cytoolz==0.12.0
-daal4py==2023.1.1
+daal4py
 dask==2023.6.0
 datasets==2.12.0
 datashader==0.15.2
