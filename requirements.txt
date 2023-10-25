@@ -29,7 +29,7 @@ backports.weakref==1.0.post1
 bcrypt==3.2.0
 beautifulsoup4==4.12.2
 binaryornot==0.4.4
-black==0.0
+black==23.10.1
 bleach==4.1.0
 blinker==1.6.3
 bokeh==3.2.1
