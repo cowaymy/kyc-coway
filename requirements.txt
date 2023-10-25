@@ -1,1 +1,1 @@
-face-recognition @ git+https://github.com/cowaymy/face_recognition/tree/master
+face-recognition @ git+https://github.com/cowaymy/face_recognition@master
