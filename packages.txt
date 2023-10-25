@@ -1,2 +1,5 @@
 libcurl4-openssl-dev
 libssl-dev
+ffmpeg
+libsm6
+libxext6
